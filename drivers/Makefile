@@ -196,3 +196,4 @@ obj-$(CONFIG_DPLL)		+= dpll/
 
 obj-$(CONFIG_S390)		+= s390/
 obj-$(CONFIG_OPLUS_BSP_SCHED_EXT) += sched_ext/
+obj-m += sched_dummy/
