@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Kconfig for oplus_bsp_sched_ext
+#
+menu "OPlus Hmbird scheduler module"
+
+config OPLUS_BSP_SCHED_EXT
+	tristate "Oplus BSP Scheduler Extension Module"
+	default m
+	help
+	  This is the Oplus BSP Scheduler Extension module, providing
+	  Hmbird II scheduling features and CameraScene optimizations
+	  via sched_ext (SCX) and eBPF kfuncs.
+
+	  If you want to compile this as a module, say M here.
+	  The module will be called oplus_bsp_sched_ext.ko.
+
+endmenu
