@@ -42,8 +42,7 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     zstd_dctx *dctx = NULL;
     void *workspace = NULL;
     size_t workspace_size;
-    struct zstd_frame_header header;
-    int ret;
+    unsigned long long content_size;
 
     ov = find_overlay(name);
     if (!ov)
@@ -85,24 +84,22 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     }
 
     /* 分配解压后缓冲区 */
-    ret = zstd_get_frame_header(&header, ov->data, ov->len);
-    if (ret != 0) {
-        pr_err("module_overlay: Invalid Zstd header for %s\n", name);
-        vfree(workspace);
-        return INTERCEPT_STATUS_ERROR;
-    }
+    content_size = zstd_get_frame_content_size(ov->data, ov->len);
 
-    /* 检查大小是否未知 (Zstd 允许流式压缩不记录大小，但内核模块通常有大小) */
-    if (header.frameContentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
-        pr_err("module_overlay: Zstd content size unknown for %s (orig_size fallback used)\n", name);
-        /* 仅当无法解析时，才回退到使用旧的 orig_size，虽然这可能不安全 */
+    if (content_size == ZSTD_CONTENTSIZE_UNKNOWN) {
+        pr_warn("module_overlay: Zstd content size unknown for %s, falling back to compiled orig_size\n", name);
+        /* 只有当压缩流中未记录大小时（极少见，除非是流式压缩），
+         * 才回退到编译时记录的 orig_size。
+         * 注意：如果此时替换了更大的模块且 header 未记录大小，这里可能会出问题，
+         * 但 convert_overlay.sh 生成的文件通常都包含大小。
+         */
         decompressed_size = ov->orig_size;
-    } else if (header.frameContentSize == ZSTD_CONTENTSIZE_ERROR) {
-        pr_err("module_overlay: Zstd content size error for %s\n", name);
+    } else if (content_size == ZSTD_CONTENTSIZE_ERROR) {
+        pr_err("module_overlay: Invalid Zstd header (content size error) for %s\n", name);
         vfree(workspace);
         return INTERCEPT_STATUS_ERROR;
     } else {
-        decompressed_size = header.frameContentSize;
+        decompressed_size = (size_t)content_size;
     }
 
     pr_info("module_overlay: Detected real decompressed size for %s: %zu (compiled orig: %zu)\n", 
