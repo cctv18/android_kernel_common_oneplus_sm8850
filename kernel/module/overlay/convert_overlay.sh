@@ -42,7 +42,7 @@ shopt -s nullglob
 ko_files=("$overlay_dir"/*.ko)
 file_idx=0
 
-echo "=== Module Overlay Build Info ==="
+echo "=== Module Overlay Build Info ===" >&2
 
 for ko in "${ko_files[@]}"; do
     [ -f "$ko" ] || continue
@@ -77,10 +77,10 @@ for ko in "${ko_files[@]}"; do
     fi
 
     # 日志输出
-    echo "  -> Embedded '$name':"
-    echo "       Orig Size: $orig_size bytes"
-    echo "       ZSTD Raw : $raw_comp_size bytes"
-    echo "       Final Slot: $final_size bytes (Aligned to 8KB)"
+    echo "  -> Embedded '$name':" >&2
+    echo "       Orig Size: $orig_size bytes" >&2
+    echo "       ZSTD Raw : $raw_comp_size bytes" >&2
+    echo "       Final Slot: $final_size bytes (Aligned to 8KB)" >&2
 
     # 物理填充 (使用 truncate)
     truncate -s "$final_size" "$tmp_comp"
@@ -124,7 +124,7 @@ for ko in "${ko_files[@]}"; do
     echo >> "$out_file"
 done
 
-echo "==============================="
+echo "===============================" >&2
 
 # === 生成 overlay_file_list 数组 ===
 cat <<EOF >> "$out_file"
@@ -133,7 +133,7 @@ const struct overlay_file overlay_file_list[] = {
 EOF
 
 if (( file_idx == 0 )); then
-    echo "No .ko files found in $overlay_dir"
+    echo "No .ko files found in $overlay_dir" >&2
 else
     for name in "${!name_map[@]}"; do
         array_name="${name_map[$name]}"
@@ -162,4 +162,4 @@ else
         mv "${out_file}.tmp" "$out_file"
 fi
 
-echo "Generated $out_file: $file_idx overlay file(s) processed."
+echo "Generated $out_file: $file_idx overlay file(s) processed." >&2
