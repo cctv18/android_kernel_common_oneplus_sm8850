@@ -42,6 +42,8 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     zstd_dctx *dctx = NULL;
     void *workspace = NULL;
     size_t workspace_size;
+    struct zstd_frame_header header;
+    int ret;
 
     ov = find_overlay(name);
     if (!ov)
@@ -83,7 +85,31 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     }
 
     /* 分配解压后缓冲区 */
-    decompressed_data = vmalloc(ov->orig_size);
+    ret = zstd_get_frame_header(&header, ov->data, ov->len);
+    if (ret != 0) {
+        pr_err("module_overlay: Invalid Zstd header for %s\n", name);
+        vfree(workspace);
+        return INTERCEPT_STATUS_ERROR;
+    }
+
+    /* 检查大小是否未知 (Zstd 允许流式压缩不记录大小，但内核模块通常有大小) */
+    if (header.frameContentSize == ZSTD_CONTENTSIZE_UNKNOWN) {
+        pr_err("module_overlay: Zstd content size unknown for %s (orig_size fallback used)\n", name);
+        /* 仅当无法解析时，才回退到使用旧的 orig_size，虽然这可能不安全 */
+        decompressed_size = ov->orig_size;
+    } else if (header.frameContentSize == ZSTD_CONTENTSIZE_ERROR) {
+        pr_err("module_overlay: Zstd content size error for %s\n", name);
+        vfree(workspace);
+        return INTERCEPT_STATUS_ERROR;
+    } else {
+        decompressed_size = header.frameContentSize;
+    }
+
+    pr_info("module_overlay: Detected real decompressed size for %s: %zu (compiled orig: %zu)\n", 
+            name, decompressed_size, ov->orig_size);
+    
+    /* 使用解析出的真实大小分配内存 */
+    decompressed_data = vmalloc(decompressed_size);
     if (!decompressed_data) {
         pr_err("module_overlay: vmalloc failed for decompressed data of %s\n", name);
         vfree(workspace);
@@ -91,7 +117,7 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     }
 
     /* 解压缩数据 */
-    decompressed_size = zstd_decompress_dctx(dctx, decompressed_data, ov->orig_size, ov->data, ov->len);
+    size_t actual_size = zstd_decompress_dctx(dctx, decompressed_data, decompressed_size, ov->data, ov->len);
     if (zstd_is_error(decompressed_size)) {
         pr_err("module_overlay: zstd decompress failed for %s: %zu\n", name, decompressed_size);
         vfree(decompressed_data);
@@ -103,7 +129,7 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
 
     /* 设置解压后的数据 */
     info->hdr = decompressed_data;
-    info->len = decompressed_size;
+    info->len = actual_size;
 
     pr_info("module_overlay: %s replaced with embedded version (%zu -> %zu bytes)\n",
             name, ov->len, decompressed_size);

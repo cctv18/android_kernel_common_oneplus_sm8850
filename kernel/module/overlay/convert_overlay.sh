@@ -33,10 +33,16 @@ declare -A orig_size_map   # name -> original_size
 tmp_xxd="/tmp/overlay_xxd_$$.c"
 tmp_comp="/tmp/overlay_comp_$$.ko"
 
+# === 尺寸协议配置 ===
+ALIGN_BLOCK=8192   # 8KB 对齐
+RESERVE_SIZE=8192  # 额外预留 8KB
+
 # === 处理所有 .ko 文件 ===
 shopt -s nullglob
 ko_files=("$overlay_dir"/*.ko)
 file_idx=0
+
+echo "=== Module Overlay Build Info ==="
 
 for ko in "${ko_files[@]}"; do
     [ -f "$ko" ] || continue
@@ -49,10 +55,35 @@ for ko in "${ko_files[@]}"; do
     orig_size=$(stat -c%s "$ko")
     
     # 使用 zstd 进行最大压缩
-    if ! /usr/bin/zstd -22 -f "$ko" -o "$tmp_comp"; then
+    if ! /usr/bin/zstd -22 -f "$ko" -o "$tmp_comp" >/dev/null 2>&1; then
         echo "zstd compression failed: $ko" >&2
         continue
     fi
+
+    # 计算最终槽位大小 (Slot Size) :
+    # 逻辑: (压缩大小 + 8KB预留) -> 向上取整到 8KB 倍数
+    raw_comp_size=$(stat -c%s "$tmp_comp")
+    
+    # 增加预留空间
+    size_with_reserve=$(( raw_comp_size + RESERVE_SIZE ))
+    
+    # 向上取整对齐
+    # 公式: (size + align - 1) / align * align
+    remainder=$(( size_with_reserve % ALIGN_BLOCK ))
+    if [ $remainder -eq 0 ]; then
+        final_size=$size_with_reserve
+    else
+        final_size=$(( size_with_reserve + ALIGN_BLOCK - remainder ))
+    fi
+
+    # 日志输出
+    echo "  -> Embedded '$name':"
+    echo "       Orig Size: $orig_size bytes"
+    echo "       ZSTD Raw : $raw_comp_size bytes"
+    echo "       Final Slot: $final_size bytes (Aligned to 8KB)"
+
+    # 物理填充 (使用 truncate)
+    truncate -s "$final_size" "$tmp_comp"
 
     # 生成字节数组
     if ! /usr/bin/xxd -i "$tmp_comp" > "$tmp_xxd.raw" 2>/dev/null; then
@@ -81,7 +112,6 @@ for ko in "${ko_files[@]}"; do
         "$tmp_xxd.raw" > "$tmp_xxd" || { echo "sed failed: $ko" >&2; rm -f "$tmp_xxd.raw"; continue; }
 
     rm -f "$tmp_xxd.raw" "$tmp_comp"
-
     ((file_idx++))
 
     # 记录
@@ -93,6 +123,8 @@ for ko in "${ko_files[@]}"; do
     cat "$tmp_xxd" >> "$out_file"
     echo >> "$out_file"
 done
+
+echo "==============================="
 
 # === 生成 overlay_file_list 数组 ===
 cat <<EOF >> "$out_file"
@@ -108,7 +140,7 @@ else
         count="${count_map[$name]}"
         orig_size="${orig_size_map[$name]}"
         printf '    { .name = "%s", .data = %s, .len = %d, .orig_size = %d },\n' \
-               "$name" "$array_name" "$count" "$orig_size" >> "$out_file"
+               "$name" "${name_map[$name]}" "${count_map[$name]}" "${orig_size_map[$name]}" >> "$out_file"
     done
 fi
 
