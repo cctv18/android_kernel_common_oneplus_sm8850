@@ -84,7 +84,7 @@ enum intercept_status intercept_module_load(struct load_info *info, const char *
     }
 
     /* 分配解压后缓冲区 */
-    content_size = zstd_get_frame_content_size(ov->data, ov->len);
+    content_size = ZSTD_getFrameContentSize(ov->data, ov->len);
 
     if (content_size == ZSTD_CONTENTSIZE_UNKNOWN) {
         pr_warn("module_overlay: Zstd content size unknown for %s, falling back to compiled orig_size\n", name);
