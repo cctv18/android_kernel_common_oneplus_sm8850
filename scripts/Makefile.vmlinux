@@ -39,29 +39,11 @@ ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(SRCARCH)/Makefile.postlink)
 cmd_link_vmlinux =							\
 	$< "$(LD)" "$(KBUILD_LDFLAGS)" "$(LDFLAGS_vmlinux)";		\
 	$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
-vnd_root_dir := $(patsubst %/vnd/%,%,$(word 1,$(subst /vnd/, ,$(srctree))))/vnd
-kernel_version := kernel-$(shell echo $(KERNELVERSION) | cut -d. -f1-2)
-mtk_gki_vmlinux_file := $(vnd_root_dir)/vendor/aosp_gki/$(kernel_version)/aarch64/gki/vmlinux
-qcom_gki_vmlinux_file := $(vnd_root_dir)/kernel_platform/oplus/platform/aosp_gki/gki/vmlinux
-ifneq ($(wildcard $(qcom_gki_vmlinux_file)),)
-    gki_vmlinux_path := $(qcom_gki_vmlinux_file)
-else ifneq ($(wildcard $(mtk_gki_vmlinux_file)),)
-    gki_vmlinux_path := $(mtk_gki_vmlinux_file)
-else
-    $(warning gki vmlinux files is not found!)
-endif
+
 targets += vmlinux
 vmlinux: scripts/link-vmlinux.sh vmlinux.o $(KBUILD_LDS) FORCE
 	+$(call if_changed_dep,link_vmlinux)
-	$(Q)cp $(objtree)/vmlinux $(objtree)/vmlinux_oki
-ifneq ($(and $(filter user,$(TARGET_BUILD_VARIANT)),$(gki_vmlinux_path)),)
-ifeq ($(filter no oki ogki,$(OPLUS_USE_PREBUILT_BOOTIMAGE)),)
-	$(Q)echo "Using GKI vmlinux from: $(gki_vmlinux_path)"
-	$(Q)cp $(gki_vmlinux_path) $(objtree)/vmlinux
-else
-	$(Q)echo "Skipping GKI vmlinux copy for OPLUS_USE_PREBUILT_BOOTIMAGE: $(OPLUS_USE_PREBUILT_BOOTIMAGE)"
-endif
-endif
+
 ifdef CONFIG_BUILDTIME_TABLE_SORT
 vmlinux: scripts/sorttable
 endif
